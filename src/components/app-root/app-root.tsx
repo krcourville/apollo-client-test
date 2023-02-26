@@ -24,7 +24,10 @@ export class AppRoot {
 
   @Watch('selectedId')
   async onSelectedIdChange(id: string) {
-    const [personDetail1, personDetail2] = await Promise.all([swapi.getPersonDetail1(id), swapi.getPersonDetail2(id)]);
+    const [personDetail1, personDetail2] = await Promise.all([
+      swapi.getPersonDetailWithFragment<GetPersonDetail1Response>(id, 'PersonDetail1'),
+      swapi.getPersonDetailWithFragment<GetPersonDetail2Response>(id, 'PersonDetail2'),
+    ]);
     this.personDetail1 = personDetail1;
     this.personDetail2 = personDetail2;
   }

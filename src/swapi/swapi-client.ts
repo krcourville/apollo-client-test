@@ -1,41 +1,107 @@
 import { ApolloClient, InMemoryCache, gql, NormalizedCacheObject } from '@apollo/client/core';
-// import { BatchHttpLink } from '@apollo/client/link/batch-http';
-import { GetPeopleSummaryResponse, GetPersonDetail1Response, GetPersonDetail2Response } from './types';
+import { GetPeopleSummaryResponse } from './types';
 
 const URL = 'https://swapi-graphql.netlify.app/.netlify/functions/index';
 
-const PERSON_DETAIL1_FRAGMENT = gql`
-  fragment PersonDetail1Fragment on Person {
-    id
-    name
-    birthYear
-    mass
-  }
-`;
+export type FragmentId = "PersonDetail1" | "PersonDetail2"
 
-const PERSON_DETAIL2_FRAGMENT = gql`
-  fragment PersonDetail2Fragment on Person {
-    id
-    name
-    species {
-      name
-      classification
-    }
-  }
-`;
+export const Fragments = new Map<FragmentId, string>([
+  [
+    "PersonDetail1",
+    `
+      fragment PersonDetail1 on Person {
+        id
+        name
+        birthYear
+        mass
+      }
+    `
+  ],
+  [
+    "PersonDetail2",
+    `
+      fragment PersonDetail2 on Person {
+        id
+        name
+        species {
+          name
+          classification
+        }
+      }
+    `
+  ],
+]);
 
-export class SwapiClient {
-  client: ApolloClient<NormalizedCacheObject>;
+const FRAGMENT_Q_WAIT_TIME_MS = 50;
+
+type FragmentQueryBufferItem = {
+  name: string,
+  fragment: string,
+}
+
+type FragmentQueryBufferHandler = (items: FragmentQueryBufferItem[]) => Promise<any>;
+
+type FragmentQueryBufferOptions = {
+  waitTime: number,
+}
+
+class Future<T> {
+  resolve: (value: T) => void;
+  reject: (reason?: any) => void;
+  promise: Promise<T> = null;
 
   constructor() {
-    // const link = new BatchHttpLink({
-    //   uri: URL,
-    //   batchMax: 5,
-    //   batchInterval: 20
-    // });
+    this.promise = new Promise((resolve, reject) => {
+      this.resolve = resolve;
+      this.reject = reject;
+    });
+  }
+}
+
+class FragmentQueryBuffer {
+  private items: FragmentQueryBufferItem[] = [];
+  private waitHandle: NodeJS.Timeout = null;
+  private future: Future<FragmentQueryBufferItem[]> = null;
+
+  constructor(private options: FragmentQueryBufferOptions) { }
+
+  public request(item: FragmentQueryBufferItem, handler: FragmentQueryBufferHandler): Promise<any> {
+    if (this.future == null) {
+      this.future = new Future<FragmentQueryBufferItem[]>();
+    }
+    this.items.push(item);
+
+    if (this.waitHandle != null) {
+      clearTimeout(this.waitHandle);
+      this.waitHandle = null;
+    }
+
+    this.waitHandle = setTimeout(async () => {
+      clearTimeout(this.waitHandle);
+      this.waitHandle = null;
+
+      const res = await handler(this.items.slice());
+      this.future.resolve(res);
+
+      this.items.length = 0;
+      this.future = null;
+    }, this.options.waitTime);
+
+    return this.future.promise;
+  }
+}
+
+export class SwapiClient {
+  private client: ApolloClient<NormalizedCacheObject>;
+  private getPersonDetailBuffer: FragmentQueryBuffer;
+
+  constructor() {
     this.client = new ApolloClient({
-      uri: URL,
       cache: new InMemoryCache(),
+      uri: URL,
+    });
+    this.getPersonDetailBuffer = new FragmentQueryBuffer({
+      waitTime: FRAGMENT_Q_WAIT_TIME_MS
     });
   }
 
@@ -55,42 +121,33 @@ export class SwapiClient {
     return res.data.allPeople.people;
   }
 
-  public async getPersonDetail1(personId: string): Promise<GetPersonDetail1Response> {
+  public async getPersonDetailWithFragment<TResponse>(personId: string, fragmentId: FragmentId): Promise<TResponse> {
+    const res = await this.getPersonDetailBuffer.request(
+      {
+        name: fragmentId,
+        fragment: Fragments.get(fragmentId),
+      },
+      async (buffer) => {
+        const definedFragments = buffer.map(b => b.fragment);
+        const referencedFragments = buffer.map(b => `...${b.name}`);
 
-    const res = await this.client
-      .query({
-        query: gql`
-          ${PERSON_DETAIL1_FRAGMENT}
+        const query = gql`
+          ${definedFragments}
           query Query($personId: ID) {
             person(id: $personId) {
-              ...PersonDetail1Fragment
-            }
-          }`,
-        variables: {
-          personId
-        }
-      });
-    return res.data.person;
-  }
-
-  public async getPersonDetail2(personId: string): Promise<GetPersonDetail2Response> {
-    const res = await this.client
-      .query({
-        query: gql`
-          ${PERSON_DETAIL2_FRAGMENT}
-          query Query($personId: ID) {
-            person(id: $personId) {
-              ...PersonDetail2Fragment
+              ${referencedFragments}
             }
           }
-        `,
-        variables: {
-          personId
-        }
+        `;
+        const res = await this.client.query({
+          query,
+          variables: {
+            personId
+          }
+        });
+        return res.data.person;
       });
-    console.log('RES', res.data.person);
-    return res.data.person;
+
+    return res;
   }
-
-
 }
