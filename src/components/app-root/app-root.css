@@ -1,0 +1,47 @@
+header {
+  background: #5851ff;
+  color: white;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 5px 0 rgba(0, 0, 0, 0.26);
+}
+
+h1 {
+  font-size: 1.4rem;
+  font-weight: 500;
+  color: #fff;
+  padding: 0 12px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.list li {
+  margin: 0;
+  padding: 0;
+}
+
+.list .list-item {
+  margin: 0.5rem 0.25rem;
+  display: flex;
+  align-items: center;
+  padding: 0.25rem 0.25rem;
+  border: 1px solid transparent;
+}
+
+.list .list-item.selected {
+  background-color: lightgray;
+  border: 1px solid grey;
+}
+
+.list .list-item:hover {
+  background-color: lightgray;
+}
+
+.list .list-label {
+  display: inline-block;
+  margin: 0 0.25rem;
+}
